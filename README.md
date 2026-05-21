@@ -472,8 +472,3 @@ Always test real machine behavior carefully on the actual Ray5 before relying on
 - File run progress is simulated.
 - It is designed mainly around Ray5 Pilot and bridge testing.
 
----
-
-## License
-
-Use the same license as the repository if one is provided.
