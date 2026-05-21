@@ -116,6 +116,7 @@ class EmulatorState:
     feed: int = 0
     spindle: int = 0
     air_assist: bool = False
+    air_pump_state: str = "off"
     current_file: str = ""
     sd_percent: float = 0.0
 
@@ -266,6 +267,12 @@ class Emulator:
         self._load_persisted_uploads()
         self._run_lock = threading.Lock()
         self._setup_routes()
+
+    def _set_air_pump_state(self, state: str, command: str) -> None:
+        normalized = "on" if str(state).strip().lower() == "on" else "off"
+        self.state.air_pump_state = normalized
+        self.state.air_assist = normalized == "on"
+        self.log.info("[AIR PUMP] state=%s command=%s", normalized, command)
 
     def _load_eeprom_state(self) -> dict[str, Any]:
         if self.persist_eeprom_file.exists():
@@ -481,6 +488,22 @@ class Emulator:
     def _emit_status(self) -> None:
         self._emit_lines([self._status_line()])
 
+    def _enter_alarm(self, reason: str) -> None:
+        self.log.info("[EMULATOR STOP] reason=%s", reason)
+        self.state.spindle = 0
+        self.state.feed = 0
+        self.state.state = "Alarm"
+        self.log.info("[EMULATOR ALARM] state=Alarm")
+        self._emit_status()
+
+    def _clear_alarm(self) -> None:
+        self.log.info("[EMULATOR UNLOCK] command=$X")
+        self.state.state = "Idle"
+        self.state.feed = 0
+        self.log.info("[EMULATOR ALARM CLEARED]")
+        self._emit_lines(["ok"])
+        self._emit_status()
+
     def _set_position(self, x: Optional[float] = None, y: Optional[float] = None, z: Optional[float] = None) -> None:
         if x is not None:
             self.state.x = max(0.0, min(self.machine_width, x))
@@ -671,6 +694,43 @@ class Emulator:
             self._emit_lines(["ok"])
             return "", "text/plain"
 
+        if "\x18" in (cmd or "") or upper in {"CTRL-X", "CTRLX"}:
+            self._enter_alarm("ctrl_x")
+            self._emit_lines(["error: alarm"])
+            return "", "text/plain"
+
+        if upper == "$X":
+            self._clear_alarm()
+            return "", "text/plain"
+
+        # While alarmed, block motion/homing/jog/run commands until unlocked.
+        if self.state.state == "Alarm":
+            w_alarm = line_word(upper)
+            if upper.startswith("M5"):
+                self.state.spindle = 0
+                self._emit_lines(["ok"])
+                self._emit_status()
+                return "", "text/plain"
+            if upper in {"?", "M8", "M9"}:
+                if upper == "?":
+                    self._emit_status()
+                    return "Error", "text/plain"
+                if upper == "M8":
+                    self.log.info("[EMULATOR ALARM LOCK] command=%s", stripped)
+                    self._emit_lines(["error: Alarm lock"])
+                    self._emit_status()
+                    return "", "text/plain"
+                if upper == "M9":
+                    self._set_air_pump_state("off", "M9")
+                self._emit_lines(["ok"])
+                self._emit_status()
+                return "", "text/plain"
+            if upper.startswith("$J=") or w_alarm in {"G0", "G00", "G1", "G01"} or upper in {"$H", "G28"}:
+                self.log.info("[EMULATOR ALARM LOCK] command=%s", stripped)
+                self._emit_lines(["error: Alarm lock"])
+                self._emit_status()
+                return "", "text/plain"
+
         run_delete_result = self._handle_run_delete_command(upper, stripped)
         if run_delete_result is not None:
             return run_delete_result
@@ -715,7 +775,8 @@ class Emulator:
             return "", "text/plain"
 
         if upper == "$G":
-            self._emit_lines(["[GC:G0 G54 G17 G21 G90 G94 M5 M9 T0 F0 S0]", "ok"])
+            air_word = "M8" if self.state.air_pump_state == "on" else "M9"
+            self._emit_lines([f"[GC:G0 G54 G17 G21 G90 G94 M5 {air_word} T0 F0 S0]", "ok"])
             return "", "text/plain"
 
         if upper == "$N":
@@ -739,7 +800,7 @@ class Emulator:
             self._emit_lines(["ok"])
             return "", "text/plain"
 
-        if upper == "$X" or upper == "$C":
+        if upper == "$C":
             self._emit_lines(["ok"])
             return "", "text/plain"
 
@@ -779,9 +840,9 @@ class Emulator:
                 self.state.current_file = ""
                 self.state.sd_percent = 0.0
             if upper == "M8":
-                self.state.air_assist = True
+                self._set_air_pump_state("on", "M8")
             if upper == "M9":
-                self.state.air_assist = False
+                self._set_air_pump_state("off", "M9")
             self._emit_lines(["ok"])
             self._emit_status()
             return "", "text/plain"
