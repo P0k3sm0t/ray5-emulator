@@ -702,6 +702,7 @@ class Emulator:
             ), "application/json"
 
         if upper == "$I":
+            self.log.info("[GRBL IDENTITY] command=$I")
             self._emit_lines(IDENTITY_LINES)
             return "", "text/plain"
 
