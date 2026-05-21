@@ -122,15 +122,18 @@ class EmulatorState:
 
 
 class WsHub:
-    def __init__(self, ping_seconds: float, ws_subprotocol: str) -> None:
+    def __init__(self, ping_seconds: float, ws_subprotocol: str, status_provider: Any = None, status_seconds: float = 3.0) -> None:
         self.ping_seconds = ping_seconds
+        self.status_seconds = max(1.0, float(status_seconds or 3.0))
         self.ws_subprotocol = ws_subprotocol
+        self.status_provider = status_provider
         self.clients: set = set()
         self.loop: Optional[asyncio.AbstractEventLoop] = None
         self.server = None
         self.current_id = "0"
         self.active_id = "0"
         self._ping_task: Optional[asyncio.Task] = None
+        self._status_task: Optional[asyncio.Task] = None
         self.log = logging.getLogger("emulator")
 
     async def start(self, host: str, port: int) -> None:
@@ -138,12 +141,17 @@ class WsHub:
         self.server = await serve(self._handler, host, port, subprotocols=[self.ws_subprotocol])
         self.log.info("Websocket server listening on ws://%s:%d/", host, port)
         self._ping_task = asyncio.create_task(self._ping_loop())
+        self._status_task = asyncio.create_task(self._status_loop())
 
     async def stop(self) -> None:
         if self._ping_task:
             self._ping_task.cancel()
             with contextlib.suppress(Exception):
                 await self._ping_task
+        if self._status_task:
+            self._status_task.cancel()
+            with contextlib.suppress(Exception):
+                await self._status_task
         for ws in list(self.clients):
             with contextlib.suppress(Exception):
                 await ws.close()
@@ -159,6 +167,14 @@ class WsHub:
         self.log.info("[WS SEND] CURRENT_ID:%s", self.current_id)
         await websocket.send(f"ACTIVE_ID:{self.active_id}")
         self.log.info("[WS SEND] ACTIVE_ID:%s", self.active_id)
+        if callable(self.status_provider):
+            try:
+                status_line = str(self.status_provider() or "").strip()
+                if status_line:
+                    await websocket.send(status_line)
+                    self.log.info("[WS SEND] %s", status_line)
+            except Exception:
+                pass
         try:
             async for _ in websocket:
                 pass
@@ -171,6 +187,17 @@ class WsHub:
         while True:
             await asyncio.sleep(self.ping_seconds)
             await self.broadcast("PING:0")
+
+    async def _status_loop(self) -> None:
+        while True:
+            await asyncio.sleep(self.status_seconds)
+            if callable(self.status_provider):
+                try:
+                    line = str(self.status_provider() or "").strip()
+                except Exception:
+                    line = ""
+                if line:
+                    await self.broadcast(line)
 
     async def broadcast(self, line: str) -> None:
         if not self.clients:
@@ -243,6 +270,7 @@ class Emulator:
         self.cfg = cfg
         self.log = logging.getLogger("emulator")
         self.status_axes = int(cfg.get("status_axes", 3))
+        self.status_broadcast_seconds = float(cfg.get("status_broadcast_seconds", 3))
         self.machine_width = float(cfg.get("machine_width", 400))
         self.machine_height = float(cfg.get("machine_height", 365))
         uploads_cfg = cfg.get("uploads", {}) if isinstance(cfg.get("uploads"), dict) else {}
@@ -258,7 +286,12 @@ class Emulator:
             y=float(cfg.get("initial_y", 0.0)),
             z=float(cfg.get("initial_z", 0.0)),
         )
-        self.hub = WsHub(float(cfg.get("status_ping_seconds", 10)), str(cfg.get("ws_subprotocol", "arduino")))
+        self.hub = WsHub(
+            float(cfg.get("status_ping_seconds", 10)),
+            str(cfg.get("ws_subprotocol", "arduino")),
+            status_provider=self._status_line,
+            status_seconds=self.status_broadcast_seconds,
+        )
         self.app = Flask(__name__)
         self.eeprom_data = self._load_eeprom_state()
         self.grbl_settings = self._load_grbl_settings_state()
@@ -266,6 +299,8 @@ class Emulator:
         self._seed_files()
         self._load_persisted_uploads()
         self._run_lock = threading.Lock()
+        self.ws_status_count = 0
+        self.last_status_line = self._status_line()
         self._setup_routes()
 
     def _set_air_pump_state(self, state: str, command: str) -> None:
@@ -452,6 +487,18 @@ class Emulator:
                 return Response("ok\n", status=200, mimetype="text/plain")
             return Response("error:file not found\n", status=404, mimetype="text/plain")
 
+        @self.app.get("/debug/ws")
+        def debug_ws() -> Response:
+            return jsonify(
+                {
+                    "websocket_clients": len(self.hub.clients),
+                    "page_id": self.hub.current_id,
+                    "state": self.state.state,
+                    "last_status": self.last_status_line,
+                    "status_count": self.ws_status_count,
+                }
+            )
+
     def _extract_upload_filename(self) -> str:
         qpath = request.args.get("path", "").strip()
         qname = request.args.get("name", "").strip()
@@ -486,7 +533,10 @@ class Emulator:
             self.hub.send(line)
 
     def _emit_status(self) -> None:
-        self._emit_lines([self._status_line()])
+        line = self._status_line()
+        self.last_status_line = line
+        self.ws_status_count += 1
+        self._emit_lines([line])
 
     def _enter_alarm(self, reason: str) -> None:
         self.log.info("[EMULATOR STOP] reason=%s", reason)
