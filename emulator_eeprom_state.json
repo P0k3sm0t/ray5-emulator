@@ -1,0 +1,233 @@
+{
+  "EEPROM": [
+    {
+      "F": "network",
+      "P": "Sta/SSID",
+      "H": "Station SSID",
+      "T": "S",
+      "V": "FBI Mobile",
+      "S": "32",
+      "M": "1"
+    },
+    {
+      "F": "network",
+      "P": "Sta/Password",
+      "H": "Station Password",
+      "T": "S",
+      "V": "******",
+      "S": "64",
+      "M": "8"
+    },
+    {
+      "F": "network",
+      "P": "Sta/IPMode",
+      "H": "Station IP Mode",
+      "T": "B",
+      "V": "0",
+      "O": [
+        {
+          "DHCP": "0"
+        },
+        {
+          "Static": "1"
+        }
+      ]
+    },
+    {
+      "F": "network",
+      "P": "Sta/IP",
+      "H": "Station Static IP",
+      "T": "A",
+      "V": "0.0.0.0"
+    },
+    {
+      "F": "network",
+      "P": "Sta/Gateway",
+      "H": "Station Static Gateway",
+      "T": "A",
+      "V": "0.0.0.0"
+    },
+    {
+      "F": "network",
+      "P": "Sta/Netmask",
+      "H": "Station Static Mask",
+      "T": "A",
+      "V": "0.0.0.0"
+    },
+    {
+      "F": "network",
+      "P": "AP/SSID",
+      "H": "AP SSID",
+      "T": "S",
+      "V": "LongerLaser_0454",
+      "S": "32",
+      "M": "1"
+    },
+    {
+      "F": "network",
+      "P": "AP/Password",
+      "H": "AP Password",
+      "T": "S",
+      "V": "12345678",
+      "S": "64",
+      "M": "8"
+    },
+    {
+      "F": "network",
+      "P": "AP/IP",
+      "H": "AP Static IP",
+      "T": "A",
+      "V": "192.168.0.1"
+    },
+    {
+      "F": "network",
+      "P": "AP/Channel",
+      "H": "AP Channel",
+      "T": "I",
+      "V": "1",
+      "S": "14",
+      "M": "1"
+    },
+    {
+      "F": "network",
+      "P": "System/Hostname",
+      "H": "Hostname",
+      "T": "S",
+      "V": "grblesp",
+      "S": "32",
+      "M": "1"
+    },
+    {
+      "F": "network",
+      "P": "Http/Enable",
+      "H": "HTTP Enable",
+      "T": "B",
+      "V": "1",
+      "O": [
+        {
+          "OFF": "0"
+        },
+        {
+          "ON": "1"
+        }
+      ]
+    },
+    {
+      "F": "network",
+      "P": "Http/Port",
+      "H": "HTTP Port",
+      "T": "I",
+      "V": "8848",
+      "S": "65001",
+      "M": "1"
+    },
+    {
+      "F": "network",
+      "P": "Telnet/Enable",
+      "H": "Telnet Enable",
+      "T": "B",
+      "V": "1",
+      "O": [
+        {
+          "OFF": "0"
+        },
+        {
+          "ON": "1"
+        }
+      ]
+    },
+    {
+      "F": "network",
+      "P": "Telnet/Port",
+      "H": "Telnet Port",
+      "T": "I",
+      "V": "23",
+      "S": "65001",
+      "M": "1"
+    },
+    {
+      "F": "network",
+      "P": "Radio/Mode",
+      "H": "Radio mode",
+      "T": "B",
+      "V": "3",
+      "O": [
+        {
+          "AP": "2"
+        },
+        {
+          "AP_STA": "3"
+        },
+        {
+          "NONE": "0"
+        },
+        {
+          "STA": "1"
+        }
+      ]
+    },
+    {
+      "F": "network",
+      "P": "SD/history",
+      "H": "sd_history",
+      "T": "S",
+      "V": "NO_History json=yes",
+      "S": "50",
+      "M": "0"
+    },
+    {
+      "F": "network",
+      "P": "Accel/XZAngle",
+      "H": "Accel XAngle Threshold Value",
+      "T": "I",
+      "V": "110",
+      "S": "3000",
+      "M": "60"
+    },
+    {
+      "F": "network",
+      "P": "Accel/Freq",
+      "H": "Accel Freq Threshold Value",
+      "T": "I",
+      "V": "15",
+      "S": "40",
+      "M": "3"
+    },
+    {
+      "F": "network",
+      "P": "Accel/Time",
+      "H": "Accel Time Threshold Value",
+      "T": "I",
+      "V": "15",
+      "S": "100",
+      "M": "3"
+    },
+    {
+      "F": "network",
+      "P": "Accel/ZAngle",
+      "H": "Accel ZAngle Threshold Value",
+      "T": "I",
+      "V": "180",
+      "S": "3000",
+      "M": "80"
+    },
+    {
+      "F": "network",
+      "P": "Accel/XAngle",
+      "H": "Accel XAngle Threshold Value",
+      "T": "I",
+      "V": "180",
+      "S": "3000",
+      "M": "80"
+    },
+    {
+      "F": "network",
+      "P": "Flame/Value",
+      "H": "ADC Flame Threshold Value",
+      "T": "I",
+      "V": "2500",
+      "S": "4095",
+      "M": "0"
+    }
+  ]
+}
