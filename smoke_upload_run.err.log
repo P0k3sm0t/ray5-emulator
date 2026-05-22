@@ -1,0 +1,125 @@
+2026-05-22 06:54:49,130 INFO [EEPROM LOAD] file=C:\Users\jmden\OneDrive\Documents\GitHub\ray5-emulator\emulator_eeprom_state.json
+2026-05-22 06:54:49,131 INFO [GRBL SETTINGS LOAD] file=C:\Users\jmden\OneDrive\Documents\GitHub\ray5-emulator\emulator_grbl_settings_state.json
+2026-05-22 06:54:49,132 INFO [UPLOAD STORED] file=/test_square.gc size=44 storage_key=/test_square.gc
+2026-05-22 06:54:49,133 INFO [UPLOAD STORED] file=/sample_frame.gc size=51 storage_key=/sample_frame.gc
+2026-05-22 06:54:49,134 INFO [UPLOAD STORED] file=/lightburn_job_001.gc size=47 storage_key=/lightburn_job_001.gc
+2026-05-22 06:54:49,146 INFO [UPLOAD STORED] file=/3214.gc size=11772 storage_key=/3214.gc
+2026-05-22 06:54:49,162 INFO [UPLOAD STORED] file=/gscale.gc size=2160331 storage_key=/gscale.gc
+2026-05-22 06:54:49,165 INFO [UPLOAD STORED] file=/smoke_job.gc size=45 storage_key=/smoke_job.gc
+2026-05-22 06:54:49,178 INFO [UPLOAD STORED] file=/test 3.gc size=23867 storage_key=/test 3.gc
+2026-05-22 06:54:49,191 INFO [UPLOAD STORED] file=/test_1.gc size=23866 storage_key=/test_1.gc
+2026-05-22 06:54:49,202 INFO [UPLOAD STORED] file=/test_2.gc size=23170 storage_key=/test_2.gc
+2026-05-22 06:54:49,203 INFO [UPLOAD STORED] file=/uploadrun_test.gc size=45 storage_key=/uploadrun_test.gc
+2026-05-22 06:54:49,215 INFO HTTP server listening on http://127.0.0.1:8848
+2026-05-22 06:54:49,217 INFO server listening on 127.0.0.1:8849
+2026-05-22 06:54:49,217 INFO Websocket server listening on ws://127.0.0.1:8849/
+2026-05-22 06:54:49,388 INFO [EMULATOR FILES] path=/ count=10
+2026-05-22 06:54:49,388 INFO 127.0.0.1 - - [22/May/2026 06:54:49] "GET /files?path=/ HTTP/1.1" 200 -
+2026-05-22 06:54:49,390 INFO [EMULATOR FILES] path=/ count=10
+2026-05-22 06:54:49,391 INFO 127.0.0.1 - - [22/May/2026 06:54:49] "GET /files?path=/ HTTP/1.1" 200 -
+2026-05-22 06:54:49,403 INFO [EMULATOR FILES] path=/ count=10
+2026-05-22 06:54:49,404 INFO 127.0.0.1 - - [22/May/2026 06:54:49] "GET /files?path=/ HTTP/1.1" 200 -
+2026-05-22 06:54:51,107 INFO connection open
+2026-05-22 06:54:51,107 INFO [WS CONNECT] peer=('127.0.0.1', 52699) subprotocol=arduino
+2026-05-22 06:54:51,107 INFO [WS SEND] CURRENT_ID:0
+2026-05-22 06:54:51,108 INFO [WS SEND] ACTIVE_ID:0
+2026-05-22 06:54:51,108 INFO [WS SEND] <Idle|MPos:0.000,0.000,0.000|FS:0,0|Ov:100,100,100|Heap:52012>
+2026-05-22 06:54:52,231 INFO [WS SEND] <Idle|MPos:0.000,0.000,0.000|FS:0,0|Ov:100,100,100|Heap:52012>
+2026-05-22 06:54:55,233 INFO [WS SEND] <Idle|MPos:0.000,0.000,0.000|FS:0,0|Ov:100,100,100|Heap:52012>
+2026-05-22 06:54:56,124 INFO [HTTP COMMAND RAW] commandText=?
+2026-05-22 06:54:56,124 INFO [HTTP COMMAND DECODED] command=? pageid=0
+2026-05-22 06:54:56,125 INFO [HTTP COMMAND] command=? pageid=0
+2026-05-22 06:54:56,126 INFO 127.0.0.1 - - [22/May/2026 06:54:56] "GET /command?commandText=?&PAGEID=0 HTTP/1.1" 200 -
+2026-05-22 06:54:56,126 INFO [WS SEND] <Idle|MPos:0.000,0.000,0.000|FS:0,0|Ov:100,100,100|Heap:52012>
+2026-05-22 06:54:58,247 INFO [WS SEND] <Idle|MPos:0.000,0.000,0.000|FS:0,0|Ov:100,100,100|Heap:52012>
+2026-05-22 06:54:59,231 INFO [WS SEND] PING:0
+2026-05-22 06:55:01,154 INFO [HTTP COMMAND RAW] commandText=?
+2026-05-22 06:55:01,154 INFO [HTTP COMMAND DECODED] command=? pageid=0
+2026-05-22 06:55:01,154 INFO [HTTP COMMAND] command=? pageid=0
+2026-05-22 06:55:01,155 INFO 127.0.0.1 - - [22/May/2026 06:55:01] "GET /command?commandText=?&PAGEID=0 HTTP/1.1" 200 -
+2026-05-22 06:55:01,155 INFO [WS SEND] <Idle|MPos:0.000,0.000,0.000|FS:0,0|Ov:100,100,100|Heap:52012>
+2026-05-22 06:55:01,249 INFO [WS SEND] <Idle|MPos:0.000,0.000,0.000|FS:0,0|Ov:100,100,100|Heap:52012>
+2026-05-22 06:55:04,264 INFO [WS SEND] <Idle|MPos:0.000,0.000,0.000|FS:0,0|Ov:100,100,100|Heap:52012>
+2026-05-22 06:55:06,185 INFO [HTTP COMMAND RAW] commandText=?
+2026-05-22 06:55:06,185 INFO [HTTP COMMAND DECODED] command=? pageid=0
+2026-05-22 06:55:06,186 INFO [HTTP COMMAND] command=? pageid=0
+2026-05-22 06:55:06,186 INFO 127.0.0.1 - - [22/May/2026 06:55:06] "GET /command?commandText=?&PAGEID=0 HTTP/1.1" 200 -
+2026-05-22 06:55:06,186 INFO [WS SEND] <Idle|MPos:0.000,0.000,0.000|FS:0,0|Ov:100,100,100|Heap:52012>
+2026-05-22 06:55:07,276 INFO [WS SEND] <Idle|MPos:0.000,0.000,0.000|FS:0,0|Ov:100,100,100|Heap:52012>
+2026-05-22 06:55:09,246 INFO [WS SEND] PING:0
+2026-05-22 06:55:10,278 INFO [WS SEND] <Idle|MPos:0.000,0.000,0.000|FS:0,0|Ov:100,100,100|Heap:52012>
+2026-05-22 06:55:11,217 INFO [HTTP COMMAND RAW] commandText=?
+2026-05-22 06:55:11,218 INFO [HTTP COMMAND DECODED] command=? pageid=0
+2026-05-22 06:55:11,218 INFO [HTTP COMMAND] command=? pageid=0
+2026-05-22 06:55:11,218 INFO 127.0.0.1 - - [22/May/2026 06:55:11] "GET /command?commandText=?&PAGEID=0 HTTP/1.1" 200 -
+2026-05-22 06:55:11,218 INFO [WS SEND] <Idle|MPos:0.000,0.000,0.000|FS:0,0|Ov:100,100,100|Heap:52012>
+2026-05-22 06:55:11,221 INFO [UPLOAD STORED] file=/pilot_upload_run.gc size=45 storage_key=/pilot_upload_run.gc
+2026-05-22 06:55:11,221 INFO [EMULATOR UPLOAD] filename=/pilot_upload_run.gc size=45 content_type=multipart/form-data; boundary=d1c70fc2d5fbc4d5475a68794034dc9a
+2026-05-22 06:55:11,222 INFO [EMULATOR UPLOAD OK] path=/pilot_upload_run.gc
+2026-05-22 06:55:11,222 INFO 127.0.0.1 - - [22/May/2026 06:55:11] "POST /upload HTTP/1.1" 200 -
+2026-05-22 06:55:11,248 INFO [HTTP COMMAND RAW] commandText=[ESP220]/pilot_upload_run.gc
+2026-05-22 06:55:11,249 INFO [HTTP COMMAND DECODED] command=[ESP220]/pilot_upload_run.gc pageid=0
+2026-05-22 06:55:11,249 INFO [HTTP COMMAND] command=[ESP220]/pilot_upload_run.gc pageid=0
+2026-05-22 06:55:11,249 INFO [JOB LOOKUP] requested=/pilot_upload_run.gc candidates=['/pilot_upload_run.gc', 'pilot_upload_run.gc']
+2026-05-22 06:55:11,249 INFO [JOB LOOKUP OK] file=/pilot_upload_run.gc storage_key=/pilot_upload_run.gc
+2026-05-22 06:55:11,250 INFO [RUN COMMAND DETECTED] mode=esp220 file=/pilot_upload_run.gc
+2026-05-22 06:55:11,250 INFO [JOB START] file=/pilot_upload_run.gc lines=7 size=45 source=esp220
+2026-05-22 06:55:11,250 INFO [WS SEND] ok
+2026-05-22 06:55:11,251 INFO 127.0.0.1 - - [22/May/2026 06:55:11] "GET /command?commandText=[ESP220]/pilot_upload_run.gc&PAGEID=0 HTTP/1.1" 200 -
+2026-05-22 06:55:11,251 INFO [WS SEND] [MSG:Running pilot_upload_run.gc]
+2026-05-22 06:55:11,251 INFO [WS SEND] <Run|MPos:0.000,0.000,0.000|FS:0,0|Ov:100,100,100|SD:0.00,/pilot_upload_run.gc|time:0.000|Heap:52012>
+2026-05-22 06:55:11,252 INFO [WS SEND] <Run|MPos:0.000,0.000,0.000|FS:0,0|Ov:100,100,100|SD:14.29,/pilot_upload_run.gc|time:0.001|Heap:52012>
+2026-05-22 06:55:11,823 INFO [AIR PUMP] state=on command=M8
+2026-05-22 06:55:12,110 INFO [POSITION] x=10.000 y=10.000 z=0.000
+2026-05-22 06:55:12,111 INFO [WS SEND] <Run|MPos:10.000,10.000,0.000|FS:1000,0|Ov:100,100,100|A:F|SD:57.14,/pilot_upload_run.gc|time:0.861|Heap:52012>
+2026-05-22 06:55:12,397 INFO [POSITION] x=20.000 y=20.000 z=0.000
+2026-05-22 06:55:12,466 INFO [HTTP COMMAND RAW] commandText=$sd/run=/pilot_upload_run.gc
+2026-05-22 06:55:12,467 INFO [HTTP COMMAND DECODED] command=$sd/run=/pilot_upload_run.gc pageid=0
+2026-05-22 06:55:12,467 INFO [HTTP COMMAND] command=$sd/run=/pilot_upload_run.gc pageid=0
+2026-05-22 06:55:12,467 INFO [JOB LOOKUP] requested=/pilot_upload_run.gc candidates=['/pilot_upload_run.gc', 'pilot_upload_run.gc']
+2026-05-22 06:55:12,467 INFO [JOB LOOKUP OK] file=/pilot_upload_run.gc storage_key=/pilot_upload_run.gc
+2026-05-22 06:55:12,468 INFO [RUN COMMAND DETECTED] mode=sd_run file=/pilot_upload_run.gc
+2026-05-22 06:55:12,468 INFO 127.0.0.1 - - [22/May/2026 06:55:12] "GET /command?commandText=$sd/run%3D/pilot_upload_run.gc&PAGEID=0 HTTP/1.1" 200 -
+2026-05-22 06:55:12,468 INFO [WS SEND] error: job already running
+2026-05-22 06:55:12,684 INFO [AIR PUMP] state=off command=M9
+2026-05-22 06:55:12,970 INFO [WS SEND] <Run|MPos:20.000,20.000,0.000|FS:1000,0|Ov:100,100,100|SD:100.00,/pilot_upload_run.gc|time:1.720|Heap:52012>
+2026-05-22 06:55:13,256 INFO [JOB COMPLETE] file=/pilot_upload_run.gc elapsed=2.006 lines=7
+2026-05-22 06:55:13,256 INFO [WS SEND] <Run|MPos:20.000,20.000,0.000|FS:1000,0|Ov:100,100,100|SD:100.00,/pilot_upload_run.gc|time:2.006|Heap:52012>
+2026-05-22 06:55:13,257 INFO [WS SEND] <Idle|MPos:20.000,20.000,0.000|FS:0,0|Ov:100,100,100|Heap:52012>
+2026-05-22 06:55:13,283 INFO [WS SEND] <Idle|MPos:20.000,20.000,0.000|FS:0,0|Ov:100,100,100|Heap:52012>
+2026-05-22 06:55:13,684 INFO [HTTP COMMAND RAW] commandText=$sd/runzip=/pilot_upload_run.gc
+2026-05-22 06:55:13,685 INFO [HTTP COMMAND DECODED] command=$sd/runzip=/pilot_upload_run.gc pageid=0
+2026-05-22 06:55:13,685 INFO [HTTP COMMAND] command=$sd/runzip=/pilot_upload_run.gc pageid=0
+2026-05-22 06:55:13,686 INFO [JOB LOOKUP] requested=/pilot_upload_run.gc candidates=['/pilot_upload_run.gc', 'pilot_upload_run.gc']
+2026-05-22 06:55:13,686 INFO [JOB LOOKUP OK] file=/pilot_upload_run.gc storage_key=/pilot_upload_run.gc
+2026-05-22 06:55:13,687 INFO [RUN COMMAND DETECTED] mode=sd_runzip file=/pilot_upload_run.gc
+2026-05-22 06:55:13,687 INFO [JOB START] file=/pilot_upload_run.gc lines=7 size=45 source=runzip
+2026-05-22 06:55:13,688 INFO [WS SEND] ok
+2026-05-22 06:55:13,688 INFO 127.0.0.1 - - [22/May/2026 06:55:13] "GET /command?commandText=$sd/runzip%3D/pilot_upload_run.gc&PAGEID=0 HTTP/1.1" 200 -
+2026-05-22 06:55:13,688 INFO [WS SEND] [MSG:Running pilot_upload_run.gc]
+2026-05-22 06:55:13,689 INFO [WS SEND] <Run|MPos:20.000,20.000,0.000|FS:0,0|Ov:100,100,100|SD:0.00,/pilot_upload_run.gc|time:0.000|Heap:52012>
+2026-05-22 06:55:13,689 INFO [WS SEND] <Run|MPos:20.000,20.000,0.000|FS:0,0|Ov:100,100,100|SD:14.29,/pilot_upload_run.gc|time:0.001|Heap:52012>
+2026-05-22 06:55:14,260 INFO [AIR PUMP] state=on command=M8
+2026-05-22 06:55:14,547 INFO [POSITION] x=10.000 y=10.000 z=0.000
+2026-05-22 06:55:14,548 INFO [WS SEND] <Run|MPos:10.000,10.000,0.000|FS:1000,0|Ov:100,100,100|A:F|SD:57.14,/pilot_upload_run.gc|time:0.861|Heap:52012>
+2026-05-22 06:55:14,834 INFO [POSITION] x=20.000 y=20.000 z=0.000
+2026-05-22 06:55:15,120 INFO [AIR PUMP] state=off command=M9
+2026-05-22 06:55:15,407 INFO [WS SEND] <Run|MPos:20.000,20.000,0.000|FS:1000,0|Ov:100,100,100|SD:100.00,/pilot_upload_run.gc|time:1.720|Heap:52012>
+2026-05-22 06:55:15,694 INFO [JOB COMPLETE] file=/pilot_upload_run.gc elapsed=2.007 lines=7
+2026-05-22 06:55:15,694 INFO [WS SEND] <Run|MPos:20.000,20.000,0.000|FS:1000,0|Ov:100,100,100|SD:100.00,/pilot_upload_run.gc|time:2.007|Heap:52012>
+2026-05-22 06:55:15,694 INFO [WS SEND] <Idle|MPos:20.000,20.000,0.000|FS:0,0|Ov:100,100,100|Heap:52012>
+2026-05-22 06:55:16,235 INFO [HTTP COMMAND RAW] commandText=?
+2026-05-22 06:55:16,236 INFO [HTTP COMMAND DECODED] command=? pageid=0
+2026-05-22 06:55:16,236 INFO [HTTP COMMAND] command=? pageid=0
+2026-05-22 06:55:16,237 INFO 127.0.0.1 - - [22/May/2026 06:55:16] "GET /command?commandText=?&PAGEID=0 HTTP/1.1" 200 -
+2026-05-22 06:55:16,237 INFO [WS SEND] <Idle|MPos:20.000,20.000,0.000|FS:0,0|Ov:100,100,100|Heap:52012>
+2026-05-22 06:55:16,295 INFO [WS SEND] <Idle|MPos:20.000,20.000,0.000|FS:0,0|Ov:100,100,100|Heap:52012>
+2026-05-22 06:55:19,262 INFO [WS SEND] PING:0
+2026-05-22 06:55:19,310 INFO [WS SEND] <Idle|MPos:20.000,20.000,0.000|FS:0,0|Ov:100,100,100|Heap:52012>
+2026-05-22 06:55:21,267 INFO [HTTP COMMAND RAW] commandText=?
+2026-05-22 06:55:21,267 INFO [HTTP COMMAND DECODED] command=? pageid=0
+2026-05-22 06:55:21,268 INFO [HTTP COMMAND] command=? pageid=0
+2026-05-22 06:55:21,268 INFO 127.0.0.1 - - [22/May/2026 06:55:21] "GET /command?commandText=?&PAGEID=0 HTTP/1.1" 200 -
+2026-05-22 06:55:21,268 INFO [WS SEND] <Idle|MPos:20.000,20.000,0.000|FS:0,0|Ov:100,100,100|Heap:52012>
+2026-05-22 06:55:22,325 INFO [WS SEND] <Idle|MPos:20.000,20.000,0.000|FS:0,0|Ov:100,100,100|Heap:52012>
+2026-05-22 06:55:25,326 INFO [WS SEND] <Idle|MPos:20.000,20.000,0.000|FS:0,0|Ov:100,100,100|Heap:52012>

@@ -6,6 +6,7 @@ import logging
 import re
 import threading
 import time
+from urllib.parse import parse_qs, unquote_plus
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
@@ -94,6 +95,7 @@ class UploadedFile:
     compressed: bool = False
     last_run_at: str = ""
     run_count: int = 0
+    lines: list[str] = field(default_factory=list)
 
     def to_json(self) -> dict[str, Any]:
         modified = self.last_run_at or self.uploaded_at
@@ -119,6 +121,26 @@ class EmulatorState:
     air_pump_state: str = "off"
     current_file: str = ""
     sd_percent: float = 0.0
+    run_started_at: float = 0.0
+
+
+@dataclass
+class ActiveJob:
+    file_path: str
+    source: str
+    lines: list[str]
+    total_lines: int
+    size_bytes: int
+    started_at: float
+    paused: bool = False
+    line_index: int = 0
+    processed_lines: int = 0
+    progress_percent: float = 0.0
+    pause_started_at: float = 0.0
+    paused_total_seconds: float = 0.0
+    stop_requested: bool = False
+    completed: bool = False
+    aborted_reason: str = ""
 
 
 class WsHub:
@@ -265,6 +287,14 @@ def now_iso() -> str:
     return datetime.now().isoformat(timespec="seconds")
 
 
+def strip_gcode_comments(line: str) -> str:
+    text = str(line or "")
+    text = re.sub(r"\(.*?\)", "", text)
+    if ";" in text:
+        text = text.split(";", 1)[0]
+    return text.strip()
+
+
 class Emulator:
     def __init__(self, cfg: dict[str, Any]) -> None:
         self.cfg = cfg
@@ -279,6 +309,9 @@ class Emulator:
         self.uploads_dir.mkdir(parents=True, exist_ok=True)
         self.default_files_enabled = bool(uploads_cfg.get("default_files", True))
         self.simulate_run_seconds = float(uploads_cfg.get("simulate_run_seconds", 3))
+        self.job_line_delay_seconds = max(0.001, float(cfg.get("job_line_delay_seconds", 0.05)))
+        self.job_min_duration_seconds = max(0.0, float(cfg.get("job_min_duration_seconds", 2.0)))
+        self.job_max_duration_seconds = max(self.job_min_duration_seconds, float(cfg.get("job_max_duration_seconds", 600.0)))
         self.persist_eeprom_file = Path(cfg.get("persist_eeprom_file", "emulator_eeprom_state.json")).resolve()
         self.persist_grbl_settings_file = Path(cfg.get("persist_grbl_settings_file", "emulator_grbl_settings_state.json")).resolve()
         self.state = EmulatorState(
@@ -296,9 +329,13 @@ class Emulator:
         self.eeprom_data = self._load_eeprom_state()
         self.grbl_settings = self._load_grbl_settings_state()
         self.files: dict[str, UploadedFile] = {}
+        self._files_lock = threading.RLock()
         self._seed_files()
         self._load_persisted_uploads()
         self._run_lock = threading.Lock()
+        self._state_lock = threading.RLock()
+        self.active_job: Optional[ActiveJob] = None
+        self._active_job_thread: Optional[threading.Thread] = None
         self.ws_status_count = 0
         self.last_status_line = self._status_line()
         self._setup_routes()
@@ -394,6 +431,11 @@ class Emulator:
     def _put_file(self, path: str, content: bytes, source: str = "upload") -> UploadedFile:
         norm = self._normalize_sd_path(path)
         filename = Path(norm).name
+        try:
+            decoded = content.decode("utf-8", errors="ignore")
+        except Exception:
+            decoded = ""
+        lines = decoded.splitlines()
         rec = UploadedFile(
             filename=filename,
             path=norm,
@@ -401,15 +443,19 @@ class Emulator:
             uploaded_at=now_iso(),
             content=content,
             compressed=filename.lower().endswith(".gz"),
+            lines=lines,
         )
-        self.files[norm] = rec
-        if self.uploads_persist and source in {"upload", "persist"}:
-            (self.uploads_dir / filename).write_bytes(content)
+        with self._files_lock:
+            self.files[norm] = rec
+            if self.uploads_persist and source in {"upload", "persist"}:
+                (self.uploads_dir / filename).write_bytes(content)
+        self.log.info("[UPLOAD STORED] file=%s size=%d storage_key=%s", norm, rec.size, norm)
         return rec
 
     def _delete_file(self, path: str) -> bool:
         norm = self._normalize_sd_path(path)
-        rec = self.files.pop(norm, None)
+        with self._files_lock:
+            rec = self.files.pop(norm, None)
         if not rec:
             return False
         disk_path = self.uploads_dir / rec.filename
@@ -431,11 +477,89 @@ class Emulator:
             raw = raw.replace("//", "/")
         return raw
 
+    def _normalize_incoming_command(self, cmd: str) -> str:
+        text = str(cmd or "").strip()
+        prev = None
+        cur = text
+        for _ in range(2):
+            try:
+                dec = unquote_plus(cur)
+            except Exception:
+                dec = cur
+            if dec == cur or dec == prev:
+                cur = dec
+                break
+            prev = cur
+            cur = dec
+        text = cur.strip().replace("\\", "/")
+        if len(text) >= 2 and ((text[0] == text[-1] == '"') or (text[0] == text[-1] == "'")):
+            text = text[1:-1].strip()
+        text = re.sub(r"\s+", " ", text)
+        text = re.sub(r"\[\s*ESP220\s*\]", "[ESP220]", text, flags=re.IGNORECASE)
+        text = re.sub(r"(\[ESP220\])\s+", r"\1", text, flags=re.IGNORECASE)
+        text = re.sub(r"(\$SD/RUNZIP?=)\s+", r"\1", text, flags=re.IGNORECASE)
+        text = re.sub(r"(\[ESP220\]/+)", "[ESP220]/", text, flags=re.IGNORECASE)
+        text = re.sub(r"(\$SD/RUNZIP?=/+)/", r"\1", text, flags=re.IGNORECASE)
+        return text
+
+    def _resolve_file_for_run(self, requested: str) -> tuple[str | None, list[str]]:
+        requested_norm = self._normalize_sd_path(requested)
+        basename = Path(requested_norm).name
+        candidates = [
+            requested_norm,
+            requested_norm.lstrip("/"),
+            f"/{requested_norm.lstrip('/')}",
+            basename,
+            f"/{basename}",
+        ]
+        seen: set[str] = set()
+        dedup_candidates: list[str] = []
+        for c in candidates:
+            cc = str(c or "").strip()
+            if cc and cc not in seen:
+                seen.add(cc)
+                dedup_candidates.append(cc)
+        self.log.info("[JOB LOOKUP] requested=%s candidates=%s", requested_norm, dedup_candidates)
+        with self._files_lock:
+            keys = list(self.files.keys())
+            for candidate in dedup_candidates:
+                cand_norm = self._normalize_sd_path(candidate)
+                if cand_norm in self.files:
+                    self.log.info("[JOB LOOKUP OK] file=%s storage_key=%s", requested_norm, cand_norm)
+                    return cand_norm, dedup_candidates
+        self.log.warning("[JOB LOOKUP FAILED] requested=%s available=%s", requested_norm, keys)
+        return None, dedup_candidates
+
+    def _extract_run_command(self, upper: str, stripped: str) -> tuple[str, str] | None:
+        m_esp = re.match(r"^\[ESP220\]\s*/?(.*)$", stripped, flags=re.IGNORECASE)
+        if m_esp:
+            raw_file = str(m_esp.group(1) or "").strip()
+            if raw_file:
+                return "esp220", raw_file
+        if re.match(r"^\$SD/RUNZIP\s*=", upper, flags=re.IGNORECASE):
+            raw_file = str(stripped.split("=", 1)[1] if "=" in stripped else "").strip().lstrip("/")
+            if raw_file:
+                return "sd_runzip", raw_file
+        if re.match(r"^\$SD/RUN\s*=", upper, flags=re.IGNORECASE):
+            raw_file = str(stripped.split("=", 1)[1] if "=" in stripped else "").strip().lstrip("/")
+            if raw_file:
+                return "sd_run", raw_file
+        return None
+
     def _setup_routes(self) -> None:
         @self.app.get("/command")
         def command() -> Response:
+            raw_cmd = ""
+            try:
+                raw_qs = request.query_string.decode("utf-8", errors="replace")
+                parsed = parse_qs(raw_qs, keep_blank_values=True)
+                raw_cmd = str(parsed.get("commandText", [""])[0])
+            except Exception:
+                raw_cmd = ""
             cmd = request.args.get("commandText", "")
             pageid = request.args.get("PAGEID", "")
+            self.log.info("[HTTP COMMAND RAW] commandText=%s", raw_cmd)
+            self.log.info("[HTTP COMMAND DECODED] command=%s pageid=%s", cmd, pageid)
             self.log.info("[HTTP COMMAND] command=%s pageid=%s", cmd, pageid)
             body, content_type = self._handle_command(cmd)
             return Response(body, status=200, mimetype=content_type)
@@ -443,7 +567,8 @@ class Emulator:
         @self.app.get("/files")
         def files() -> Response:
             req_path = self._normalize_sd_path(request.args.get("path", "/"))
-            rows = [f.to_json() for _, f in sorted(self.files.items(), key=lambda kv: kv[0].lower())]
+            with self._files_lock:
+                rows = [f.to_json() for _, f in sorted(self.files.items(), key=lambda kv: kv[0].lower())]
             self.log.info("[EMULATOR FILES] path=%s count=%d", req_path, len(rows))
             accept = str(request.headers.get("Accept", "")).lower()
             if "text/plain" in accept:
@@ -499,6 +624,25 @@ class Emulator:
                 }
             )
 
+        @self.app.get("/debug/job")
+        def debug_job() -> Response:
+            with self._state_lock:
+                job = self.active_job
+                state = self.state
+                payload = {
+                    "state": state.state,
+                    "active_job": job.file_path if job else "",
+                    "progress_percent": float(job.progress_percent) if job else 0.0,
+                    "line_index": int(job.line_index) if job else 0,
+                    "total_lines": int(job.total_lines) if job else 0,
+                    "elapsed_seconds": float(self._job_elapsed_seconds_locked(job)) if job else 0.0,
+                    "paused": bool(job.paused) if job else False,
+                    "air_assist": bool(state.air_pump_state == "on"),
+                    "spindle": int(state.spindle),
+                    "mpos": {"x": float(state.x), "y": float(state.y), "z": float(state.z)},
+                }
+            return jsonify(payload)
+
     def _extract_upload_filename(self) -> str:
         qpath = request.args.get("path", "").strip()
         qname = request.args.get("name", "").strip()
@@ -521,12 +665,23 @@ class Emulator:
         return request.get_data() or b""
 
     def _status_line(self) -> str:
-        coords = f"{self.state.x:.3f},{self.state.y:.3f}" if self.status_axes == 2 else f"{self.state.x:.3f},{self.state.y:.3f},{self.state.z:.3f}"
-        base = f"<{self.state.state}|MPos:{coords}|FS:{self.state.feed},{self.state.spindle}|Ov:100,100,100"
-        if self.state.current_file and self.state.state == "Run":
-            base += f"|SD:{self.state.sd_percent:0.2f},{self.state.current_file}"
-        base += "|Heap:52012>"
-        return base
+        with self._state_lock:
+            coords = f"{self.state.x:.3f},{self.state.y:.3f}" if self.status_axes == 2 else f"{self.state.x:.3f},{self.state.y:.3f},{self.state.z:.3f}"
+            base = f"<{self.state.state}|MPos:{coords}|FS:{self.state.feed},{self.state.spindle}|Ov:100,100,100"
+            accessory_flags: list[str] = []
+            if int(self.state.spindle or 0) > 0:
+                accessory_flags.append("S")
+            if str(self.state.air_pump_state or "").lower() == "on":
+                accessory_flags.append("F")
+            if accessory_flags:
+                base += f"|A:{''.join(accessory_flags)}"
+            if self.state.current_file and self.state.state in {"Run", "Hold"}:
+                base += f"|SD:{self.state.sd_percent:0.2f},{self.state.current_file}"
+                elapsed = self._job_elapsed_seconds_locked(self.active_job)
+                if elapsed >= 0.0:
+                    base += f"|time:{elapsed:0.3f}"
+            base += "|Heap:52012>"
+            return base
 
     def _emit_lines(self, lines: list[str]) -> None:
         for line in lines:
@@ -538,18 +693,29 @@ class Emulator:
         self.ws_status_count += 1
         self._emit_lines([line])
 
+    def _job_elapsed_seconds_locked(self, job: Optional[ActiveJob]) -> float:
+        if not job:
+            return -1.0
+        now = time.time()
+        paused_extra = (now - job.pause_started_at) if (job.paused and job.pause_started_at > 0.0) else 0.0
+        elapsed = max(0.0, now - job.started_at - job.paused_total_seconds - paused_extra)
+        return elapsed
+
     def _enter_alarm(self, reason: str) -> None:
         self.log.info("[EMULATOR STOP] reason=%s", reason)
-        self.state.spindle = 0
-        self.state.feed = 0
-        self.state.state = "Alarm"
+        with self._state_lock:
+            self._stop_active_job_locked(reason=reason, to_alarm=True)
         self.log.info("[EMULATOR ALARM] state=Alarm")
         self._emit_status()
 
     def _clear_alarm(self) -> None:
         self.log.info("[EMULATOR UNLOCK] command=$X")
-        self.state.state = "Idle"
-        self.state.feed = 0
+        with self._state_lock:
+            self.active_job = None
+            self.state.current_file = ""
+            self.state.sd_percent = 0.0
+            self._set_machine_state("Idle")
+            self.state.feed = 0
         self.log.info("[EMULATOR ALARM CLEARED]")
         self._emit_lines(["ok"])
         self._emit_status()
@@ -563,41 +729,190 @@ class Emulator:
             self.state.z = z
         self.log.info("[POSITION] x=%.3f y=%.3f z=%.3f", self.state.x, self.state.y, self.state.z)
 
-    def _simulate_run(self, file_path: str, mode: str) -> None:
-        if not self._run_lock.acquire(blocking=False):
-            self._emit_lines(["error: Another interface is busy"])
+    def _set_machine_state(self, new_state: str) -> None:
+        normalized = str(new_state or "Idle").strip() or "Idle"
+        self.state.state = normalized
+        if normalized == "Run":
+            if not isinstance(self.state.run_started_at, (int, float)) or self.state.run_started_at <= 0:
+                self.state.run_started_at = time.time()
+        elif normalized not in {"Hold"}:
+            self.state.run_started_at = 0.0
+
+    def _stop_active_job_locked(self, reason: str, to_alarm: bool) -> None:
+        job = self.active_job
+        if job:
+            job.stop_requested = True
+            job.aborted_reason = reason
+            self.log.info("[JOB STOP] file=%s reason=%s progress=%.2f", job.file_path, reason, job.progress_percent)
+        self.state.spindle = 0
+        self.state.feed = 0
+        if to_alarm:
+            self._set_machine_state("Alarm")
+        else:
+            self._set_machine_state("Idle")
+        if not to_alarm:
+            self.state.current_file = ""
+            self.state.sd_percent = 0.0
+            self.active_job = None
+
+    def _start_job(self, file_path: str, source: str) -> bool:
+        with self._state_lock:
+            if self.active_job and self.state.state in {"Run", "Hold"}:
+                self._emit_lines(["error: job already running"])
+                return False
+            with self._files_lock:
+                rec = self.files.get(file_path)
+            if not rec:
+                self._emit_lines(["error:file not found"])
+                self.log.warning("[EMULATOR RUN ERROR] reason=file_not_found filename=%s", file_path)
+                return False
+            lines = list(rec.lines or rec.content.decode("utf-8", errors="ignore").splitlines())
+            total_lines = max(1, len(lines))
+            self.active_job = ActiveJob(
+                file_path=file_path,
+                source=source,
+                lines=lines,
+                total_lines=total_lines,
+                size_bytes=rec.size,
+                started_at=time.time(),
+            )
+            self.state.current_file = file_path
+            self.state.sd_percent = 0.0
+            self._set_machine_state("Run")
+            self.state.feed = 0
+            self.log.info("[JOB START] file=%s lines=%d size=%d source=%s", file_path, len(lines), rec.size, source)
+        self._emit_lines(["ok", f"[MSG:Running {Path(file_path).name}]"])
+        self._emit_status()
+        t = threading.Thread(target=self._job_runner_loop, daemon=True)
+        self._active_job_thread = t
+        t.start()
+        return True
+
+    def _apply_gcode_runtime_effects_locked(self, line: str) -> None:
+        upper = line.upper()
+        word = line_word(upper)
+        tokens = parse_tokens(line)
+
+        if word in {"G0", "G00", "G1", "G01"}:
+            x = self.state.x
+            y = self.state.y
+            z = self.state.z
+            if "X" in tokens:
+                vx = float(tokens["X"][-1])
+                x = vx if self.state.absolute_mode else x + vx
+            if "Y" in tokens:
+                vy = float(tokens["Y"][-1])
+                y = vy if self.state.absolute_mode else y + vy
+            if "Z" in tokens:
+                vz = float(tokens["Z"][-1])
+                z = vz if self.state.absolute_mode else z + vz
+            if "F" in tokens:
+                self.state.feed = int(float(tokens["F"][-1]))
+            if "S" in tokens:
+                self.state.spindle = int(float(tokens["S"][-1]))
+            self._set_position(x, y, z)
             return
 
-        def _runner() -> None:
-            try:
-                self.state.current_file = file_path
-                self.state.state = "Run"
-                self.state.feed = 1000
-                self.state.sd_percent = 0.0
-                self._emit_lines(["ok", f"[MSG:Running {Path(file_path).name}]"])
-                self._emit_status()
-                steps = [10.0, 25.0, 50.0, 75.0, 100.0]
-                wait = max(0.2, self.simulate_run_seconds / len(steps))
-                for pct in steps:
-                    time.sleep(wait)
-                    self.state.sd_percent = pct
-                    self.log.info("[EMULATOR RUN PROGRESS] percent=%.2f", pct)
-                    self._emit_status()
-                rec = self.files.get(file_path)
-                if rec:
-                    rec.last_run_at = now_iso()
-                    rec.run_count += 1
-                self.state.state = "Idle"
-                self.state.feed = 0
-                self.state.spindle = 0
-                self.state.current_file = ""
-                self.state.sd_percent = 0.0
-                self.log.info("[EMULATOR RUN COMPLETE] filename=%s", file_path)
-                self._emit_status()
-            finally:
-                self._run_lock.release()
+        if upper in {"G90", "G91"}:
+            self.state.absolute_mode = upper == "G90"
+            return
+        if upper.startswith("M3") or upper.startswith("M4"):
+            if "S" in tokens:
+                self.state.spindle = int(float(tokens["S"][-1]))
+            elif self.state.spindle <= 0:
+                self.state.spindle = 1
+            return
+        if upper.startswith("M5"):
+            self.state.spindle = 0
+            return
+        if upper == "M8":
+            self._set_air_pump_state("on", "M8")
+            return
+        if upper == "M9":
+            self._set_air_pump_state("off", "M9")
+            return
+        if upper in {"M2", "M30"}:
+            return
 
-        threading.Thread(target=_runner, daemon=True).start()
+    def _line_delay_seconds(self, total_lines: int) -> float:
+        if total_lines <= 0:
+            return self.job_line_delay_seconds
+        per_line_from_min = self.job_min_duration_seconds / float(total_lines)
+        per_line_from_max = self.job_max_duration_seconds / float(total_lines)
+        d = max(self.job_line_delay_seconds, per_line_from_min)
+        d = min(d, per_line_from_max)
+        return max(0.001, d)
+
+    def _job_runner_loop(self) -> None:
+        last_status_emit = 0.0
+        while True:
+            with self._state_lock:
+                job = self.active_job
+                if not job:
+                    return
+                if job.stop_requested:
+                    return
+                if job.paused:
+                    if time.time() - last_status_emit >= 0.75:
+                        self._set_machine_state("Hold")
+                        self.state.feed = 0
+                        last_status_emit = time.time()
+                        self._emit_status()
+                    do_sleep = 0.05
+                    do_line = None
+                elif job.line_index >= job.total_lines:
+                    job.progress_percent = 100.0
+                    self.state.sd_percent = 100.0
+                    self._set_machine_state("Run")
+                    self._emit_status()
+                    with self._files_lock:
+                        rec = self.files.get(job.file_path)
+                    if rec:
+                        rec.last_run_at = now_iso()
+                        rec.run_count += 1
+                    elapsed = self._job_elapsed_seconds_locked(job)
+                    self.log.info("[JOB COMPLETE] file=%s elapsed=%.3f lines=%d", job.file_path, elapsed, job.total_lines)
+                    self._set_machine_state("Idle")
+                    self.state.feed = 0
+                    self.state.spindle = 0
+                    self.state.current_file = ""
+                    self.state.sd_percent = 0.0
+                    self.active_job = None
+                    self._emit_status()
+                    return
+                else:
+                    do_line = job.lines[job.line_index] if job.line_index < len(job.lines) else ""
+                    job.line_index += 1
+                    do_sleep = self._line_delay_seconds(job.total_lines)
+            if do_line is None:
+                time.sleep(do_sleep)
+                continue
+
+            clean = strip_gcode_comments(do_line)
+            upper = clean.upper()
+            dwell_seconds = 0.0
+            with self._state_lock:
+                job = self.active_job
+                if not job or job.stop_requested:
+                    return
+                if clean:
+                    self._apply_gcode_runtime_effects_locked(clean)
+                    if upper.startswith("G4"):
+                        tok = parse_tokens(clean)
+                        if "P" in tok:
+                            dwell_seconds = min(1.0, max(0.0, float(tok["P"][-1]) / 1000.0))
+                        elif "S" in tok:
+                            dwell_seconds = min(1.0, max(0.0, float(tok["S"][-1])))
+                if clean:
+                    job.processed_lines += 1
+                job.progress_percent = max(0.0, min(100.0, (float(job.line_index) / float(job.total_lines)) * 100.0))
+                self.state.sd_percent = job.progress_percent
+                self._set_machine_state("Run")
+                now = time.time()
+                if now - last_status_emit >= 0.75:
+                    last_status_emit = now
+                    self._emit_status()
+            time.sleep(max(do_sleep, dwell_seconds))
 
     def _esp800_raw(self) -> str:
         return (
@@ -707,20 +1022,22 @@ class Emulator:
         return json.dumps(body), "application/json"
 
     def _handle_run_delete_command(self, upper: str, stripped: str) -> Optional[tuple[str, str]]:
-        if upper.startswith("$SD/RUN=") or upper.startswith("$SD/RUNZIP="):
-            raw_file = stripped.split("=", 1)[1].strip()
-            file_path = self._normalize_sd_path(raw_file)
-            rec = self.files.get(file_path)
-            if rec:
-                mode = "runzip" if upper.startswith("$SD/RUNZIP=") else "run"
-                if mode == "run":
-                    self.log.info("[EMULATOR RUN] filename=%s mode=run", file_path)
-                else:
-                    self.log.info("[EMULATOR RUNZIP] filename=%s mode=runzip", file_path)
-                self._simulate_run(file_path, mode)
+        run_cmd = self._extract_run_command(upper, stripped)
+        if run_cmd is not None:
+            mode, raw_file = run_cmd
+            resolved, _ = self._resolve_file_for_run(raw_file)
+            log_file = self._normalize_sd_path(raw_file)
+            if mode == "esp220":
+                self.log.info("[RUN COMMAND DETECTED] mode=esp220 file=%s", log_file)
+            elif mode == "sd_run":
+                self.log.info("[RUN COMMAND DETECTED] mode=sd_run file=%s", log_file)
             else:
-                self.log.warning("[EMULATOR RUN ERROR] reason=file_not_found filename=%s", file_path)
-                self._emit_lines(["error:file not found"])
+                self.log.info("[RUN COMMAND DETECTED] mode=sd_runzip file=%s", log_file)
+            if not resolved:
+                self._emit_lines(["error: file not found"])
+                return "", "text/plain"
+            start_mode = "esp220" if mode == "esp220" else ("runzip" if mode == "sd_runzip" else "run")
+            self._start_job(resolved, start_mode)
             return "", "text/plain"
 
         if upper.startswith("$SD/DELETE="):
@@ -737,7 +1054,7 @@ class Emulator:
         return None
 
     def _handle_command(self, cmd: str) -> tuple[str, str]:
-        stripped = (cmd or "").strip()
+        stripped = self._normalize_incoming_command(str(cmd or ""))
         upper = stripped.upper()
 
         if not stripped:
@@ -776,6 +1093,11 @@ class Emulator:
                 self._emit_status()
                 return "", "text/plain"
             if upper.startswith("$J=") or w_alarm in {"G0", "G00", "G1", "G01"} or upper in {"$H", "G28"}:
+                self.log.info("[EMULATOR ALARM LOCK] command=%s", stripped)
+                self._emit_lines(["error: Alarm lock"])
+                self._emit_status()
+                return "", "text/plain"
+            if self._extract_run_command(upper, stripped) is not None:
                 self.log.info("[EMULATOR ALARM LOCK] command=%s", stripped)
                 self._emit_lines(["error: Alarm lock"])
                 self._emit_status()
@@ -826,7 +1148,9 @@ class Emulator:
 
         if upper == "$G":
             air_word = "M8" if self.state.air_pump_state == "on" else "M9"
-            self._emit_lines([f"[GC:G0 G54 G17 G21 G90 G94 M5 {air_word} T0 F0 S0]", "ok"])
+            spindle_word = "M3" if int(self.state.spindle or 0) > 0 else "M5"
+            spindle_val = int(self.state.spindle or 0)
+            self._emit_lines([f"[GC:G0 G54 G17 G21 G90 G94 {spindle_word} {air_word} T0 F0 S{spindle_val}]", "ok"])
             return "", "text/plain"
 
         if upper == "$N":
@@ -859,19 +1183,37 @@ class Emulator:
             return "Error", "text/plain"
 
         if upper == "!":
-            self.state.state = "Hold"
+            with self._state_lock:
+                if self.active_job:
+                    if not self.active_job.paused:
+                        self.active_job.paused = True
+                        self.active_job.pause_started_at = time.time()
+                    self._set_machine_state("Hold")
+                    self.log.info("[JOB PAUSE] file=%s progress=%.2f", self.active_job.file_path, self.active_job.progress_percent)
+                else:
+                    self._set_machine_state("Hold")
             self._emit_lines(["ok"])
             self._emit_status()
             return "", "text/plain"
 
         if upper == "~":
-            self.state.state = "Run"
+            with self._state_lock:
+                if self.active_job:
+                    if self.active_job.paused:
+                        self.active_job.paused = False
+                        if self.active_job.pause_started_at > 0:
+                            self.active_job.paused_total_seconds += max(0.0, time.time() - self.active_job.pause_started_at)
+                        self.active_job.pause_started_at = 0.0
+                    self._set_machine_state("Run")
+                    self.log.info("[JOB RESUME] file=%s progress=%.2f", self.active_job.file_path, self.active_job.progress_percent)
+                else:
+                    self._set_machine_state("Run")
             self._emit_lines(["ok"])
             self._emit_status()
             return "", "text/plain"
 
         if upper == "$H" or upper == "G28":
-            self.state.state = "Idle"
+            self._set_machine_state("Idle")
             self._set_position(0.0, 0.0, 0.0)
             self._emit_lines(["ok"])
             self._emit_status()
@@ -885,7 +1227,7 @@ class Emulator:
 
         if upper in {"G20", "G21", "G54", "G17", "G40", "M2", "M30", "M8", "M9"}:
             if upper in {"M2", "M30"}:
-                self.state.state = "Idle"
+                self._set_machine_state("Idle")
                 self.state.feed = 0
                 self.state.current_file = ""
                 self.state.sd_percent = 0.0
@@ -901,14 +1243,16 @@ class Emulator:
             tok = parse_tokens(stripped)
             if "S" in tok:
                 self.state.spindle = int(float(tok["S"][-1]))
-            self.state.state = "Run"
+            self._set_machine_state("Run")
             self._emit_lines(["ok"])
             self._emit_status()
             return "", "text/plain"
 
         if upper.startswith("M5"):
-            self.state.spindle = 0
-            self.state.state = "Idle"
+            with self._state_lock:
+                self.state.spindle = 0
+                if not self.active_job:
+                    self._set_machine_state("Idle")
             self._emit_lines(["ok"])
             self._emit_status()
             return "", "text/plain"
@@ -933,10 +1277,10 @@ class Emulator:
             if "F" in jog_tokens:
                 self.state.feed = int(float(jog_tokens["F"][-1]))
             self._set_position(x, y, z)
-            self.state.state = "Run"
+            self._set_machine_state("Run")
             self._emit_lines(["ok"])
             self._emit_status()
-            self.state.state = "Idle"
+            self._set_machine_state("Idle")
             return "", "text/plain"
 
         w = line_word(upper)
@@ -958,11 +1302,11 @@ class Emulator:
                 self.state.feed = int(float(t["F"][-1]))
             if "S" in t:
                 self.state.spindle = int(float(t["S"][-1]))
-            self.state.state = "Run"
+            self._set_machine_state("Run")
             self._set_position(x, y, z)
             self._emit_lines(["ok"])
             self._emit_status()
-            self.state.state = "Idle"
+            self._set_machine_state("Idle")
             return "", "text/plain"
 
         self._emit_lines(["error: unsupported command"])
