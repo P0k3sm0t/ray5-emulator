@@ -1,6 +1,8 @@
 {
   "http_host": "127.0.0.1",
   "http_port": 8848,
+  "raw_host": "127.0.0.1",
+  "raw_port": 8850,
   "ws_host": "127.0.0.1",
   "ws_port": 8849,
   "ws_subprotocol": "arduino",

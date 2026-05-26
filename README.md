@@ -13,7 +13,8 @@ It is useful for development, UI testing, update testing, upload/run testing, GR
 The emulator provides mock Ray5 network services:
 
 - HTTP command interface on port `8848`
-- WebSocket status interface on port `8849`
+- Raw GRBL/Tibbo TCP interface on port `8849`
+- WebSocket status interface on port `8850`
 - ESP3D-style command responses
 - GRBL-style settings and status responses
 - SD file upload/list/run behavior
@@ -25,7 +26,8 @@ Default addresses:
 
 ```text
 HTTP:      http://127.0.0.1:8848
-WebSocket: ws://127.0.0.1:8849/
+Raw TCP:   127.0.0.1:8849
+WebSocket: ws://127.0.0.1:8850/
 ```
 
 WebSocket subprotocol:
@@ -39,6 +41,15 @@ arduino
 ## Why This Exists
 
 The real Ray5 does not behave like a plain serial GRBL board. It uses an ESP32 network layer with HTTP commands and WebSocket sideband status.
+
+Important port mapping:
+
+- `8848` is HTTP/web API only.
+- `8849` is raw newline-terminated GRBL/Tibbo TCP.
+- `8850` is WebSocket status sideband.
+
+If raw GRBL traffic is sent to `8848`, the emulator logs one warning per client (rate-limited):
+`Raw GRBL traffic received on HTTP port 8848. Configure Tibbo/LightBurn to connect to raw TCP port 8849 instead.`
 
 This emulator helps test those behaviors locally, including:
 
@@ -93,7 +104,8 @@ You should see output similar to:
 
 ```text
 HTTP server listening on http://127.0.0.1:8848
-Websocket server listening on ws://127.0.0.1:8849/
+Raw GRBL TCP server listening on 127.0.0.1:8849
+Websocket server listening on ws://127.0.0.1:8850/
 ```
 
 ---
@@ -105,7 +117,8 @@ In Ray5 Pilot, set the Ray5 host/settings to:
 ```text
 Host: 127.0.0.1
 HTTP Port: 8848
-WebSocket Port: 8849
+Raw TCP Port: 8849
+WebSocket Port: 8850
 ```
 
 Then use Ray5 Pilot normally.
@@ -306,7 +319,8 @@ Common options:
   "http_host": "127.0.0.1",
   "http_port": 8848,
   "ws_host": "127.0.0.1",
-  "ws_port": 8849,
+  "raw_port": 8849,
+  "ws_port": 8850,
   "ws_subprotocol": "arduino",
   "machine_width": 400,
   "machine_height": 365,
@@ -338,7 +352,8 @@ Open Ray5 Pilot and set:
 ```text
 Ray5 Host: 127.0.0.1
 HTTP Port: 8848
-WebSocket Port: 8849
+Raw TCP Port: 8849
+WebSocket Port: 8850
 ```
 
 Recommended tests:
@@ -396,7 +411,8 @@ Point the bridge to:
 ```text
 Ray5 Host: 127.0.0.1
 HTTP Port: 8848
-WebSocket Port: 8849
+Raw TCP Port: 8849
+WebSocket Port: 8850
 ```
 
 Then connect LightBurn to the bridge as usual.
@@ -441,13 +457,14 @@ Press:
 Ctrl+C
 ```
 
-The emulator should shut down cleanly and release ports `8848` and `8849`.
+The emulator should shut down cleanly and release ports `8848`, `8849`, and `8850`.
 
 To check on Windows:
 
 ```powershell
 netstat -ano | findstr :8848
 netstat -ano | findstr :8849
+netstat -ano | findstr :8850
 ```
 
 `TIME_WAIT` entries are normal after shutdown. A remaining `LISTENING` entry means something is still running.
@@ -471,4 +488,3 @@ Always test real machine behavior carefully on the actual Ray5 before relying on
 - Motion simulation is basic.
 - File run progress is simulated.
 - It is designed mainly around Ray5 Pilot and bridge testing.
-

@@ -4,6 +4,7 @@ import ipaddress
 import json
 import logging
 import re
+import socketserver
 import threading
 import time
 from urllib.parse import parse_qs, unquote_plus
@@ -13,11 +14,12 @@ from pathlib import Path
 from typing import Any, Optional
 
 from flask import Flask, Response, jsonify, request
-from werkzeug.serving import make_server
+from werkzeug.serving import WSGIRequestHandler, make_server
 from websockets.server import serve
 
 TOKEN_RE = re.compile(r"([A-Za-z])([+-]?\d*\.?\d*)")
 ESP401_RE = re.compile(r"\[ESP401\]\s*(.*)$", re.IGNORECASE)
+HTTP_METHOD_PREFIXES = ("GET ", "POST ", "PUT ", "PATCH ", "DELETE ", "HEAD ", "OPTIONS ")
 
 IDENTITY_LINES = [
     "[VER:1.3a.20211103:]",
@@ -240,6 +242,80 @@ class WsHub:
         asyncio.run_coroutine_threadsafe(self.broadcast(line), self.loop)
 
 
+class RawTcpHub:
+    def __init__(self) -> None:
+        self._clients: set[socketserver.BaseRequestHandler] = set()
+        self._lock = threading.RLock()
+        self.log = logging.getLogger("emulator")
+
+    def add(self, handler: socketserver.BaseRequestHandler) -> None:
+        with self._lock:
+            self._clients.add(handler)
+
+    def remove(self, handler: socketserver.BaseRequestHandler) -> None:
+        with self._lock:
+            self._clients.discard(handler)
+
+    def send(self, line: str) -> None:
+        payload = (str(line).rstrip("\n") + "\n").encode("utf-8", errors="replace")
+        dead: list[socketserver.BaseRequestHandler] = []
+        with self._lock:
+            clients = list(self._clients)
+        for handler in clients:
+            try:
+                handler.request.sendall(payload)  # type: ignore[attr-defined]
+            except Exception:
+                dead.append(handler)
+        if dead:
+            with self._lock:
+                for handler in dead:
+                    self._clients.discard(handler)
+
+
+def _looks_like_grbl_or_raw_noise(raw_requestline: bytes) -> bool:
+    if not raw_requestline:
+        return False
+    line = raw_requestline.decode("latin-1", errors="replace").strip()
+    if not line:
+        return False
+    upper = line.upper()
+    if upper.startswith(HTTP_METHOD_PREFIXES):
+        return False
+    if upper.startswith(("G0", "G1", "G2", "G3", "$", "?", "M3", "M4", "M5", "$J=", "!", "~")):
+        return True
+    non_printable = sum(1 for ch in line if ord(ch) < 32 or ord(ch) > 126)
+    if non_printable >= 1:
+        return True
+    return False
+
+
+class QuietHttpRequestHandler(WSGIRequestHandler):
+    raw_port_hint = 8849
+    _warned_clients: dict[str, float] = {}
+    _warn_lock = threading.Lock()
+    _warn_interval_seconds = 10.0
+
+    def log_error(self, format: str, *args: Any) -> None:
+        raw_line = getattr(self, "raw_requestline", b"")
+        if _looks_like_grbl_or_raw_noise(raw_line):
+            peer = self.client_address[0] if self.client_address else "unknown"
+            now = time.time()
+            should_warn = False
+            with self._warn_lock:
+                prev = self._warned_clients.get(peer, 0.0)
+                if (now - prev) >= self._warn_interval_seconds:
+                    self._warned_clients[peer] = now
+                    should_warn = True
+            if should_warn:
+                logging.getLogger("emulator").warning(
+                    "Raw GRBL traffic received on HTTP port %s. Configure Tibbo/LightBurn to connect to raw TCP port %s instead.",
+                    getattr(self.server, "server_port", 8848),
+                    self.raw_port_hint,
+                )
+            return
+        super().log_error(format, *args)
+
+
 def parse_tokens(line: str) -> dict[str, list[float | str]]:
     out: dict[str, list[float | str]] = {}
     for letter, num in TOKEN_RE.findall(line):
@@ -325,6 +401,7 @@ class Emulator:
             status_provider=self._status_line,
             status_seconds=self.status_broadcast_seconds,
         )
+        self.raw_hub = RawTcpHub()
         self.app = Flask(__name__)
         self.eeprom_data = self._load_eeprom_state()
         self.grbl_settings = self._load_grbl_settings_state()
@@ -686,6 +763,7 @@ class Emulator:
     def _emit_lines(self, lines: list[str]) -> None:
         for line in lines:
             self.hub.send(line)
+            self.raw_hub.send(line)
 
     def _emit_status(self) -> None:
         line = self._status_line()
@@ -1313,6 +1391,67 @@ class Emulator:
         return "", "text/plain"
 
 
+class RawTcpHandler(socketserver.BaseRequestHandler):
+    def setup(self) -> None:
+        self.log = logging.getLogger("emulator")
+        self.buffer = bytearray()
+        self.server.emulator.raw_hub.add(self)  # type: ignore[attr-defined]
+        self._probe_logged = False
+        self.log.info("[RAW CONNECT] peer=%s", self.client_address)
+
+    def handle(self) -> None:
+        while True:
+            try:
+                data = self.request.recv(4096)
+            except OSError:
+                break
+            if not data:
+                break
+            for b in data:
+                if b in (10, 13):
+                    self._flush_line()
+                    continue
+                self.buffer.append(b)
+                if len(self.buffer) > 8192:
+                    self.buffer.clear()
+
+    def finish(self) -> None:
+        self._flush_line()
+        self.server.emulator.raw_hub.remove(self)  # type: ignore[attr-defined]
+        self.log.info("[RAW DISCONNECT] peer=%s", self.client_address)
+
+    def _flush_line(self) -> None:
+        if not self.buffer:
+            return
+        raw = bytes(self.buffer)
+        self.buffer.clear()
+        line = raw.decode("latin-1", errors="replace").strip()
+        if not line:
+            return
+        upper = line.upper()
+        if not re.match(r"^(\$|G|M|\?|!|~|\x18)", upper):
+            if not self._probe_logged:
+                self.log.warning("[RAW PROBE BYTES] peer=%s bytes=%r", self.client_address, raw[:64])
+                self._probe_logged = True
+            return
+        self.log.info("[RAW RX] peer=%s line=%s", self.client_address, line)
+        body, _ctype = self.server.emulator._handle_command(line)  # type: ignore[attr-defined]
+        if body:
+            for out_line in str(body).replace("\r", "").split("\n"):
+                out_line = out_line.strip()
+                if out_line:
+                    self.server.emulator.raw_hub.send(out_line)  # type: ignore[attr-defined]
+
+
+class ThreadedRawTcpServer(socketserver.ThreadingMixIn, socketserver.TCPServer):
+    allow_reuse_address = True
+    daemon_threads = True
+
+    def __init__(self, addr: tuple[str, int], emulator: Emulator):
+        self.emulator = emulator
+        super().__init__(addr, RawTcpHandler)
+
+
 def load_config(path: Path) -> dict[str, Any]:
     return json.loads(path.read_text(encoding="utf-8"))
 
@@ -1327,14 +1466,35 @@ def main() -> None:
     log = logging.getLogger("emulator")
     cfg = load_config(Path(__file__).with_name("config.json"))
     emulator = Emulator(cfg)
+    raw_host = str(cfg.get("raw_host", cfg.get("ws_host", "127.0.0.1")))
+    raw_port = int(cfg.get("raw_port", cfg.get("ws_port", 8849)))
+    ws_port = int(cfg.get("ws_port", 8849))
+    if ws_port == raw_port:
+        ws_port = raw_port + 1
+        log.warning(
+            "ws_port conflicts with raw_port (%s). Moving websocket server to %s so raw GRBL TCP can use %s.",
+            raw_port,
+            ws_port,
+            raw_port,
+        )
+    QuietHttpRequestHandler.raw_port_hint = raw_port
 
-    http_server = make_server(str(cfg["http_host"]), int(cfg["http_port"]), emulator.app)
+    http_server = make_server(
+        str(cfg["http_host"]),
+        int(cfg["http_port"]),
+        emulator.app,
+        request_handler=QuietHttpRequestHandler,
+    )
     http_thread = threading.Thread(target=http_server.serve_forever, daemon=True)
     http_thread.start()
     log.info("HTTP server listening on http://%s:%s", cfg["http_host"], cfg["http_port"])
+    raw_server = ThreadedRawTcpServer((raw_host, raw_port), emulator)
+    raw_thread = threading.Thread(target=raw_server.serve_forever, daemon=True)
+    raw_thread.start()
+    log.info("Raw GRBL TCP server listening on %s:%s", raw_host, raw_port)
 
     async def ws_main() -> None:
-        await emulator.hub.start(str(cfg["ws_host"]), int(cfg["ws_port"]))
+        await emulator.hub.start(str(cfg["ws_host"]), ws_port)
         try:
             await asyncio.Event().wait()
         except asyncio.CancelledError:
@@ -1352,8 +1512,14 @@ def main() -> None:
             http_server.shutdown()
         with contextlib.suppress(Exception):
             http_server.server_close()
+        with contextlib.suppress(Exception):
+            raw_server.shutdown()
+        with contextlib.suppress(Exception):
+            raw_server.server_close()
         http_thread.join(timeout=2.0)
+        raw_thread.join(timeout=2.0)
         log.info("[EMULATOR SHUTDOWN] http server stopped")
+        log.info("[EMULATOR SHUTDOWN] raw tcp server stopped")
         log.info("Emulator stopped.")
 
 
