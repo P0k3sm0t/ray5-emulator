@@ -13,15 +13,22 @@ INCLUDE_PATHS = [
     "README.md",
     "requirements.txt",
     "start_emulator.bat",
+    "start_emulator.sh",
     "config.example.json",
     "LICENSE",
+    "tools/make_release_zip.py",
+    "tools/safety_check.py",
     "tools",
 ]
 
 EXCLUDE_DIR_NAMES = {
     ".git",
+    ".venv",
+    "venv",
     "__pycache__",
     "dist",
+    "build",
+    "update_work",
     "emulator_uploads",
     "emulator_storage",
     "logs",
