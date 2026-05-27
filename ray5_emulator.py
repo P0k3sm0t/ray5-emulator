@@ -363,6 +363,16 @@ def now_iso() -> str:
     return datetime.now().isoformat(timespec="seconds")
 
 
+def _backup_invalid_json(path: Path, log: logging.Logger, label: str) -> None:
+    timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+    backup = path.with_suffix(path.suffix + f".invalid-{timestamp}.bak")
+    try:
+        path.replace(backup)
+        log.warning("[%s INVALID JSON] moved_bad_file=%s backup=%s", label, path, backup)
+    except Exception as exc:
+        log.warning("[%s INVALID JSON] could_not_backup file=%s err=%s", label, path, exc)
+
+
 def strip_gcode_comments(line: str) -> str:
     text = str(line or "")
     text = re.sub(r"\(.*?\)", "", text)
@@ -382,7 +392,19 @@ class Emulator:
         uploads_cfg = cfg.get("uploads", {}) if isinstance(cfg.get("uploads"), dict) else {}
         self.uploads_persist = bool(uploads_cfg.get("persist", cfg.get("persist_uploaded_files", True)))
         self.uploads_dir = Path(uploads_cfg.get("directory", "emulator_uploads")).resolve()
+        uploads_preexisting = self.uploads_dir.exists()
         self.uploads_dir.mkdir(parents=True, exist_ok=True)
+        if uploads_preexisting:
+            self.log.info("[RUNTIME DIR LOAD] uploads_dir=%s", self.uploads_dir)
+        else:
+            self.log.info("[RUNTIME DIR CREATE] uploads_dir=%s", self.uploads_dir)
+        self.storage_dir = Path(cfg.get("storage_dir", "emulator_storage")).resolve()
+        storage_preexisting = self.storage_dir.exists()
+        self.storage_dir.mkdir(parents=True, exist_ok=True)
+        if storage_preexisting:
+            self.log.info("[RUNTIME DIR LOAD] storage_dir=%s", self.storage_dir)
+        else:
+            self.log.info("[RUNTIME DIR CREATE] storage_dir=%s", self.storage_dir)
         self.default_files_enabled = bool(uploads_cfg.get("default_files", True))
         self.simulate_run_seconds = float(uploads_cfg.get("simulate_run_seconds", 3))
         self.job_line_delay_seconds = max(0.001, float(cfg.get("job_line_delay_seconds", 0.05)))
@@ -430,10 +452,17 @@ class Emulator:
                 if isinstance(data, dict) and isinstance(data.get("EEPROM"), list):
                     self.log.info("[EEPROM LOAD] file=%s", self.persist_eeprom_file)
                     return data
-            except Exception:
-                pass
-        self.log.info("[EEPROM LOAD DEFAULTS]")
-        return json.loads(json.dumps(EEPROM_DEFAULT))
+                self.log.warning("[EEPROM INVALID STRUCTURE] file=%s; recreating defaults", self.persist_eeprom_file)
+                _backup_invalid_json(self.persist_eeprom_file, self.log, "EEPROM")
+            except Exception as exc:
+                self.log.warning("[EEPROM LOAD ERROR] file=%s err=%s; recreating defaults", self.persist_eeprom_file, exc)
+                _backup_invalid_json(self.persist_eeprom_file, self.log, "EEPROM")
+        else:
+            self.log.info("[EEPROM CREATE DEFAULTS] file=%s", self.persist_eeprom_file)
+        defaults = json.loads(json.dumps(EEPROM_DEFAULT))
+        self.eeprom_data = defaults
+        self._save_eeprom_state()
+        return defaults
 
     def _save_eeprom_state(self) -> None:
         self.persist_eeprom_file.write_text(json.dumps(self.eeprom_data, indent=2), encoding="utf-8")
@@ -456,9 +485,17 @@ class Emulator:
                     if settings:
                         self.log.info("[GRBL SETTINGS LOAD] file=%s", self.persist_grbl_settings_file)
                         return settings
-            except Exception:
-                pass
-        return self._default_grbl_settings_map()
+                self.log.warning("[GRBL SETTINGS INVALID STRUCTURE] file=%s; recreating defaults", self.persist_grbl_settings_file)
+                _backup_invalid_json(self.persist_grbl_settings_file, self.log, "GRBL SETTINGS")
+            except Exception as exc:
+                self.log.warning("[GRBL SETTINGS LOAD ERROR] file=%s err=%s; recreating defaults", self.persist_grbl_settings_file, exc)
+                _backup_invalid_json(self.persist_grbl_settings_file, self.log, "GRBL SETTINGS")
+        else:
+            self.log.info("[GRBL SETTINGS CREATE DEFAULTS] file=%s", self.persist_grbl_settings_file)
+        defaults = self._default_grbl_settings_map()
+        self.grbl_settings = defaults
+        self._save_grbl_settings_state()
+        return defaults
 
     def _save_grbl_settings_state(self) -> None:
         self.persist_grbl_settings_file.write_text(json.dumps(self.grbl_settings, indent=2), encoding="utf-8")
@@ -1453,12 +1490,22 @@ class ThreadedRawTcpServer(socketserver.ThreadingMixIn, socketserver.TCPServer):
 
 
 def load_config(path: Path) -> dict[str, Any]:
+    log = logging.getLogger("emulator")
     if path.exists():
-        return json.loads(path.read_text(encoding="utf-8"))
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+            if not isinstance(data, dict):
+                raise ValueError("config must be a JSON object")
+            log.info("[CONFIG LOAD] file=%s", path)
+            return data
+        except Exception as exc:
+            log.warning("[CONFIG LOAD ERROR] file=%s err=%s; recreating from config.example.json", path, exc)
+            _backup_invalid_json(path, log, "CONFIG")
     example_path = path.with_name("config.example.json")
     if example_path.exists():
         data = json.loads(example_path.read_text(encoding="utf-8"))
         path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+        log.info("[CONFIG CREATE] created=%s source=%s", path, example_path)
         return data
     raise FileNotFoundError(f"Missing config file: {path} (and no {example_path.name} fallback)")
 
