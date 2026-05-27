@@ -29,8 +29,8 @@ IDENTITY_LINES = [
     "[Software:v1.9.11]",
     "[Wavelength:460nm]",
     "[Working Size:XSIZE=400.00:YSIZE=365.00]",
-    "[MSG:Mode=STA:SSID=FBI Mobile:IP=127.0.0.1:MAC=10-20-BA-5F-04-54]",
-    "[MSG:Mode=AP:SSDI=LongerLaser_0454:IP=192.168.0.1:MAC=10-20-BA-5F-04-55:password=12345678]",
+    "[MSG:Mode=STA:SSID=ExampleWiFi:IP=127.0.0.1:MAC=10-20-BA-5F-04-54]",
+    "[MSG:Mode=AP:SSDI=ExampleRay5_AP:IP=192.168.0.1:MAC=10-20-BA-5F-04-55:password=********]",
     "ok",
 ]
 
@@ -60,17 +60,17 @@ OFFSETS_LINES = [
 
 EEPROM_DEFAULT = {
     "EEPROM": [
-        {"F": "network", "P": "Sta/SSID", "H": "Station SSID", "T": "S", "V": "FBI Mobile", "S": "32", "M": "1"},
-        {"F": "network", "P": "Sta/Password", "H": "Station Password", "T": "S", "V": "******", "S": "64", "M": "8"},
+        {"F": "network", "P": "Sta/SSID", "H": "Station SSID", "T": "S", "V": "ExampleWiFi", "S": "32", "M": "1"},
+        {"F": "network", "P": "Sta/Password", "H": "Station Password", "T": "S", "V": "********", "S": "64", "M": "8"},
         {"F": "network", "P": "Sta/IPMode", "H": "Station IP Mode", "T": "B", "V": "0", "O": [{"DHCP": "0"}, {"Static": "1"}]},
         {"F": "network", "P": "Sta/IP", "H": "Station Static IP", "T": "A", "V": "0.0.0.0"},
         {"F": "network", "P": "Sta/Gateway", "H": "Station Static Gateway", "T": "A", "V": "0.0.0.0"},
         {"F": "network", "P": "Sta/Netmask", "H": "Station Static Mask", "T": "A", "V": "0.0.0.0"},
-        {"F": "network", "P": "AP/SSID", "H": "AP SSID", "T": "S", "V": "LongerLaser_0454", "S": "32", "M": "1"},
-        {"F": "network", "P": "AP/Password", "H": "AP Password", "T": "S", "V": "12345678", "S": "64", "M": "8"},
+        {"F": "network", "P": "AP/SSID", "H": "AP SSID", "T": "S", "V": "ExampleRay5_AP", "S": "32", "M": "1"},
+        {"F": "network", "P": "AP/Password", "H": "AP Password", "T": "S", "V": "********", "S": "64", "M": "8"},
         {"F": "network", "P": "AP/IP", "H": "AP Static IP", "T": "A", "V": "192.168.0.1"},
         {"F": "network", "P": "AP/Channel", "H": "AP Channel", "T": "I", "V": "1", "S": "14", "M": "1"},
-        {"F": "network", "P": "System/Hostname", "H": "Hostname", "T": "S", "V": "grblesp", "S": "32", "M": "1"},
+        {"F": "network", "P": "System/Hostname", "H": "Hostname", "T": "S", "V": "ExampleHostname", "S": "32", "M": "1"},
         {"F": "network", "P": "Http/Enable", "H": "HTTP Enable", "T": "B", "V": "1", "O": [{"OFF": "0"}, {"ON": "1"}]},
         {"F": "network", "P": "Http/Port", "H": "HTTP Port", "T": "I", "V": "8848", "S": "65001", "M": "1"},
         {"F": "network", "P": "Telnet/Enable", "H": "Telnet Enable", "T": "B", "V": "1", "O": [{"OFF": "0"}, {"ON": "1"}]},
@@ -290,7 +290,7 @@ def _looks_like_grbl_or_raw_noise(raw_requestline: bytes) -> bool:
 
 
 class QuietHttpRequestHandler(WSGIRequestHandler):
-    raw_port_hint = 8849
+    raw_port_hint = 8850
     _warned_clients: dict[str, float] = {}
     _warn_lock = threading.Lock()
     _warn_interval_seconds = 10.0
@@ -996,7 +996,7 @@ class Emulator:
         return (
             "FW version:1.3a (20211103) # FW target:grbl-embedded  # FW HW:Direct SD  # primary sd:/sd "
             "# secondary sd:none # authentication:no # webcommunication: Sync: 8849:192.168.0.1,127.0.0.1 "
-            "# hostname:grblesp # axis:2"
+            "# hostname:ExampleHostname # axis:2"
         )
 
     def _esp401_write(self, cmd: str) -> tuple[str, str]:
@@ -1204,8 +1204,8 @@ class Emulator:
             return json.dumps(
                 {
                     "AP_LIST": [
-                        {"SSID": "FBI Mobile", "SIGNAL": "-45", "IS_PROTECTED": "1"},
-                        {"SSID": "LongerLaser_0454", "SIGNAL": "-30", "IS_PROTECTED": "1"},
+                        {"SSID": "ExampleWiFi", "SIGNAL": "-45", "IS_PROTECTED": "1"},
+                        {"SSID": "ExampleRay5_AP", "SIGNAL": "-30", "IS_PROTECTED": "1"},
                         {"SSID": "TestNetwork", "SIGNAL": "-70", "IS_PROTECTED": "0"},
                     ]
                 }
@@ -1453,7 +1453,22 @@ class ThreadedRawTcpServer(socketserver.ThreadingMixIn, socketserver.TCPServer):
 
 
 def load_config(path: Path) -> dict[str, Any]:
-    return json.loads(path.read_text(encoding="utf-8"))
+    if path.exists():
+        return json.loads(path.read_text(encoding="utf-8"))
+    example_path = path.with_name("config.example.json")
+    if example_path.exists():
+        data = json.loads(example_path.read_text(encoding="utf-8"))
+        path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+        return data
+    raise FileNotFoundError(f"Missing config file: {path} (and no {example_path.name} fallback)")
+
+
+def _validate_ports_or_exit(http_port: int, ws_port: int, raw_port: int, log) -> None:
+    if len({http_port, ws_port, raw_port}) != 3:
+        raise RuntimeError(
+            f"Port conflict: http_port={http_port}, ws_port={ws_port}, raw_port={raw_port}. "
+            "Use HTTP 8848, WebSocket 8849, Raw TCP 8850."
+        )
 
 
 def run_http(app: Flask, host: str, port: int) -> None:
@@ -1466,32 +1481,32 @@ def main() -> None:
     log = logging.getLogger("emulator")
     cfg = load_config(Path(__file__).with_name("config.json"))
     emulator = Emulator(cfg)
-    raw_host = str(cfg.get("raw_host", cfg.get("ws_host", "127.0.0.1")))
-    raw_port = int(cfg.get("raw_port", cfg.get("ws_port", 8849)))
+    raw_host = str(cfg.get("raw_host", "127.0.0.1"))
+    raw_port = int(cfg.get("raw_port", 8850))
     ws_port = int(cfg.get("ws_port", 8849))
-    if ws_port == raw_port:
-        ws_port = raw_port + 1
-        log.warning(
-            "ws_port conflicts with raw_port (%s). Moving websocket server to %s so raw GRBL TCP can use %s.",
-            raw_port,
-            ws_port,
-            raw_port,
-        )
+    http_port = int(cfg.get("http_port", 8848))
+    try:
+        _validate_ports_or_exit(http_port=http_port, ws_port=ws_port, raw_port=raw_port, log=log)
+    except Exception as exc:
+        log.error("%s", exc)
+        raise SystemExit(1)
     QuietHttpRequestHandler.raw_port_hint = raw_port
 
     http_server = make_server(
         str(cfg["http_host"]),
-        int(cfg["http_port"]),
+        http_port,
         emulator.app,
         request_handler=QuietHttpRequestHandler,
     )
     http_thread = threading.Thread(target=http_server.serve_forever, daemon=True)
     http_thread.start()
-    log.info("HTTP server listening on http://%s:%s", cfg["http_host"], cfg["http_port"])
+    log.info("HTTP server listening on http://%s:%s", cfg["http_host"], http_port)
     raw_server = ThreadedRawTcpServer((raw_host, raw_port), emulator)
     raw_thread = threading.Thread(target=raw_server.serve_forever, daemon=True)
     raw_thread.start()
     log.info("Raw GRBL TCP server listening on %s:%s", raw_host, raw_port)
+    log.info("Raw GRBL TCP is optional (advanced bridge/Tibbo/raw-client testing).")
+    log.info("Normal Ray5 Pilot emulator testing uses HTTP 8848 and WebSocket 8849.")
 
     async def ws_main() -> None:
         await emulator.hub.start(str(cfg["ws_host"]), ws_port)

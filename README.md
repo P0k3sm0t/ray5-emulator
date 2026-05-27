@@ -13,8 +13,8 @@ It is useful for development, UI testing, update testing, upload/run testing, GR
 The emulator provides mock Ray5 network services:
 
 - HTTP command interface on port `8848`
-- Raw GRBL/Tibbo TCP interface on port `8849`
-- WebSocket status interface on port `8850`
+- WebSocket status interface on port `8849`
+- Raw GRBL/Tibbo TCP interface on port `8850` (optional/advanced)
 - ESP3D-style command responses
 - GRBL-style settings and status responses
 - SD file upload/list/run behavior
@@ -26,8 +26,8 @@ Default addresses:
 
 ```text
 HTTP:      http://127.0.0.1:8848
-Raw TCP:   127.0.0.1:8849
-WebSocket: ws://127.0.0.1:8850/
+WebSocket: ws://127.0.0.1:8849/
+Raw TCP:   127.0.0.1:8850 (optional)
 ```
 
 WebSocket subprotocol:
@@ -45,11 +45,11 @@ The real Ray5 does not behave like a plain serial GRBL board. It uses an ESP32 n
 Important port mapping:
 
 - `8848` is HTTP/web API only.
-- `8849` is raw newline-terminated GRBL/Tibbo TCP.
-- `8850` is WebSocket status sideband.
+- `8849` is WebSocket status sideband.
+- `8850` is optional raw newline-terminated GRBL/Tibbo TCP.
 
 If raw GRBL traffic is sent to `8848`, the emulator logs one warning per client (rate-limited):
-`Raw GRBL traffic received on HTTP port 8848. Configure Tibbo/LightBurn to connect to raw TCP port 8849 instead.`
+`Raw GRBL traffic received on HTTP port 8848. Configure Tibbo/LightBurn to connect to raw TCP port 8850 instead.`
 
 This emulator helps test those behaviors locally, including:
 
@@ -104,8 +104,8 @@ You should see output similar to:
 
 ```text
 HTTP server listening on http://127.0.0.1:8848
-Raw GRBL TCP server listening on 127.0.0.1:8849
-Websocket server listening on ws://127.0.0.1:8850/
+Websocket server listening on ws://127.0.0.1:8849/
+Raw GRBL TCP server listening on 127.0.0.1:8850
 ```
 
 ---
@@ -117,8 +117,8 @@ In Ray5 Pilot, set the Ray5 host/settings to:
 ```text
 Host: 127.0.0.1
 HTTP Port: 8848
-Raw TCP Port: 8849
-WebSocket Port: 8850
+WebSocket Port: 8849
+Raw TCP Port: 8850 (optional)
 ```
 
 Then use Ray5 Pilot normally.
@@ -216,7 +216,7 @@ Example response data includes:
 FW version:1.3a (20211103)
 FW target:grbl-embedded
 FW HW:Direct SD
-hostname:grblesp
+hostname:ExampleHostname
 webcommunication: Sync: 8849:192.168.0.1,127.0.0.1
 ```
 
@@ -310,7 +310,8 @@ To reset test state, delete the relevant persistence files/folders and restart t
 
 ## Configuration
 
-Configuration is handled through `config.json`.
+Configuration is handled through `config.example.json` (release default) and optional local `config.json`.
+If `config.json` is missing, the emulator creates it from `config.example.json` on first start.
 
 Common options:
 
@@ -319,8 +320,9 @@ Common options:
   "http_host": "127.0.0.1",
   "http_port": 8848,
   "ws_host": "127.0.0.1",
-  "raw_port": 8849,
-  "ws_port": 8850,
+  "ws_port": 8849,
+  "raw_host": "127.0.0.1",
+  "raw_port": 8850,
   "ws_subprotocol": "arduino",
   "machine_width": 400,
   "machine_height": 365,
@@ -352,8 +354,8 @@ Open Ray5 Pilot and set:
 ```text
 Ray5 Host: 127.0.0.1
 HTTP Port: 8848
-Raw TCP Port: 8849
-WebSocket Port: 8850
+WebSocket Port: 8849
+Raw TCP Port: 8850 (optional)
 ```
 
 Recommended tests:
@@ -411,8 +413,8 @@ Point the bridge to:
 ```text
 Ray5 Host: 127.0.0.1
 HTTP Port: 8848
-Raw TCP Port: 8849
-WebSocket Port: 8850
+WebSocket Port: 8849
+Raw TCP Port: 8850 (optional)
 ```
 
 Then connect LightBurn to the bridge as usual.
@@ -488,3 +490,15 @@ Always test real machine behavior carefully on the actual Ray5 before relying on
 - Motion simulation is basic.
 - File run progress is simulated.
 - It is designed mainly around Ray5 Pilot and bridge testing.
+### Optional Raw TCP (Advanced)
+
+`raw_host` / `raw_port` are for optional advanced bridge/Tibbo/raw-client socket testing.
+
+Normal Ray5 Pilot emulator testing uses only:
+
+- HTTP/API: `127.0.0.1:8848`
+- WebSocket status: `127.0.0.1:8849`
+
+Raw TCP is separate and optional:
+
+- Raw GRBL TCP: `127.0.0.1:8850`

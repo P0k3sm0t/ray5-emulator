@@ -1,0 +1,28 @@
+{
+  "http_host": "127.0.0.1",
+  "http_port": 8848,
+  "ws_host": "127.0.0.1",
+  "ws_port": 8849,
+  "raw_host": "127.0.0.1",
+  "raw_port": 8850,
+  "ws_subprotocol": "arduino",
+  "machine_width": 400,
+  "machine_height": 365,
+  "status_axes": 3,
+  "job_line_delay_seconds": 0.05,
+  "job_min_duration_seconds": 2.0,
+  "job_max_duration_seconds": 600.0,
+  "mock_ip": "127.0.0.1",
+  "initial_x": 0.0,
+  "initial_y": 0.0,
+  "initial_z": 0.0,
+  "status_ping_seconds": 10,
+  "persist_eeprom_file": "emulator_eeprom_state.json",
+  "persist_grbl_settings_file": "emulator_grbl_settings_state.json",
+  "uploads": {
+    "persist": true,
+    "directory": "emulator_uploads",
+    "default_files": true,
+    "simulate_run_seconds": 3
+  }
+}
